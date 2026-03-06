@@ -1,18 +1,22 @@
-# Instruksi Patching untuk libmain.so
+# Instruksi Patching (Versi UI Bypass) untuk libmain.so
 
-Modifikasi berikut telah dilakukan pada file `libmain.so` untuk membypass proses verifikasi *key* (HTTP Authentication Loops):
+Modifikasi sebelumnya yang me-NOP (*No Operation*) proses verifikasi HTTP menyebabkan game *crash* (Force Close) akibat *Null Pointer Dereference*. Server tidak mengembalikan *key* yang valid, sehingga saat game mencoba memproses string/data *key* tersebut ke dalam memori, ia mengakses alamat kosong (Null).
 
-1. **Mem-bypass Check Response HTTP**
-   - **Alamat**: `0x002d55d8`
-   - **Tindakan**: Instruksi asli `b.ne 0x2d5764` (branch if not equal, yang melompat ke fungsi *exit* atau menggagalkan menu) telah diubah menjadi `nop`. Hal ini akan membuat program selalu melanjutkan eksekusi seolah-olah HTTP *response* valid.
+Untuk menyiasatinya, **patch versi ini berfokus langsung pada fungsi *rendering* UI (ImGui)**. Kita tidak lagi mengganggu jalannya pengecekan HTTP (biarkan dia gagal di *background*), tetapi kita meretas logika yang menggambar menu.
 
-2. **Mem-bypass Pemeriksaan Status Flag (Token/Key)**
-   - **Alamat**: `0x002d7cb4` sampai `0x002d7d04` (Multiple `tbnz` instructions)
-   - **Tindakan**: Semua instruksi yang melompat ke blok validasi gagal (`0x2d7d3c`, `0x2d7d4c`, dst) diubah menjadi `nop`. Dengan ini, aplikasi tidak akan pernah memanggil fungsi yang menampilkan pesan error "Key Invalid" atau "Expired".
+Modifikasi berikut telah dilakukan pada fungsi penggambar (*fcn.002bccec*):
 
-3. **Memaksa Loop Menu Tetap Aktif**
-   - **Alamat**: `0x002d7d2c`
-   - **Tindakan**: Instruksi akhir `cbz x0, 0x2d55cc` yang bergantung pada kembalian dari validasi HTTP diubah menjadi `b 0x2d55cc` (Unconditional Branch). Ini memaksa *thread* ImGui/Menu untuk terus berjalan (looping kembali ke atas) alih-alih keluar jika *key* ternyata kosong atau salah.
+1. **Memaksa Skip Menu Login**
+   - **Alamat**: `0x002bf308`
+   - **Tindakan**: Instruksi asli `cbz w8, 0x2bf650` (yang melompati pembuatan UI Login jika *key* sudah ada) diubah menjadi `b 0x2bf650` (*Unconditional Branch*). Ini berarti *game* tidak akan pernah mencoba menggambar kotak Login, dan langsung melompat ke blok kode yang bertugas menggambar Main Menu.
 
-**Catatan Uji Coba (Trial):**
-Karena ini adalah *static patching* pada aplikasi yang di-*obfuscate*, mungkin ada kemungkinan aplikasi akan *force close* (crash) jika fungsi lain mendeteksi modifikasi ini. Jika ini terjadi, mohon gunakan Logcat (misalnya via ADB `adb logcat | grep -i fatal`) untuk melihat *stack trace* di alamat mana *crash* terjadi, lalu beri tahu saya.
+2. **Memaksa Draw Mod Menu walau Auth Gagal**
+   - **Alamat**: `0x002bf66c` dan `0x002bf684`
+   - **Tindakan**: Di blok penggambar Main Menu, terdapat pengecekan berlapis (flag dari memori `.bss` pada offset `0x517370` dan `0x5173d8`). Jika flag ini bernilai 0 (karena *login* gagal), instruksi asli akan mengeksekusi branch ke fungsi *exit/return* (`b 0x2cd588` dan `b 0x2cd5b0`). Kita mengubah branch tersebut menjadi `nop` (*No Operation*), sehingga instruksi tetap berjalan dan merender Mod Menu ke layar.
+
+**Cara Penggunaan:**
+Jalankan script Python di bawah ini pada file `libmain.so` asli (belum dimodifikasi):
+```bash
+python3 patch_libmain.py libmain_original.so libmain_patched.so
+```
+Setelah itu repacking `libmain_patched.so` ke dalam APK Anda.

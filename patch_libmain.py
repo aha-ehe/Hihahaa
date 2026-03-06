@@ -4,36 +4,33 @@ def patch_file(filename, output_filename):
     with open(filename, 'rb') as f:
         data = bytearray(f.read())
 
-    # Patches at offsets based on r2 analysis
-    # Note: File offsets in ELF might differ from virtual addresses if not mapped 1:1.
-    # Let's calculate file offsets.
-    # .text section starts at vaddr 0xbb6b0, offset 0xbb6b0 (it's a 1:1 mapping for this file's text section!)
+    # We use byte replacements directly.
+    # r2 commands used conceptually:
+    # 1. 0x2bf308: wa b 0x2bf650 (Branch unconditionally, skip Login Menu entirely)
+    # 2. 0x2bf66c: wa nop (Do not exit drawing if auth flag 1 is missing)
+    # 3. 0x2bf684: wa nop (Do not exit drawing if auth flag 2 is missing)
+
+    # 0x2bf650 - 0x2bf308 = 0x348
+    # b 0x2bf650 -> ARM64 unconditional branch offset encoding:
+    # Opcode format: 000101 + imm26
+    # 0x348 / 4 = 0xD2
+    # 0x140000d2 (Little Endian: d2 00 00 14)
 
     patches = {
-        0x002d55d8: b"\x1f\x20\x03\xd5", # nop
-        0x002d7cb4: b"\x1f\x20\x03\xd5", # nop
-        0x002d7cbc: b"\x1f\x20\x03\xd5", # nop
-        0x002d7cc4: b"\x1f\x20\x03\xd5", # nop
-        0x002d7ccc: b"\x1f\x20\x03\xd5", # nop
-        0x002d7cd4: b"\x1f\x20\x03\xd5", # nop
-        0x002d7cdc: b"\x1f\x20\x03\xd5", # nop
-        0x002d7ce4: b"\x1f\x20\x03\xd5", # nop
-        0x002d7cec: b"\x1f\x20\x03\xd5", # nop
-        0x002d7cf4: b"\x1f\x20\x03\xd5", # nop
-        0x002d7cfc: b"\x1f\x20\x03\xd5", # nop
-        0x002d7d04: b"\x1f\x20\x03\xd5", # nop
-        0x002d7d2c: b"\x68\xf6\xff\x17", # b 0x2d55cc
+        0x002bf308: b"\xd2\x00\x00\x14", # b 0x2bf650
+        0x002bf66c: b"\x1f\x20\x03\xd5", # nop
+        0x002bf684: b"\x1f\x20\x03\xd5", # nop
     }
 
     for offset, new_bytes in patches.items():
-        print(f"Applying patch at offset {hex(offset)}")
+        print(f"Applying UI patch at offset {hex(offset)}")
         for i, b in enumerate(new_bytes):
             data[offset + i] = b
 
     with open(output_filename, 'wb') as f:
         f.write(data)
 
-    print(f"Successfully patched and saved to {output_filename}")
+    print(f"Successfully applied UI bypass patches and saved to {output_filename}")
 
 if __name__ == '__main__':
     if len(sys.argv) != 3:
